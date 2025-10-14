@@ -1,7 +1,7 @@
 # Source: Brilliant Labs Frame Codebase
 
 This repository is a clone of the Frame Codebase by Brilliant Labs, with code adjusted to account for changed peripherals.
-The repository from Brilliant Labs can be accessed ![here](docs/diagrams/frame-system-architecture.drawio.png)
+The repository from Brilliant Labs can be accessed ![here](https://github.com/brilliantlabsAR/frame-codebase#)
 
 # Frame Firmware & RTL Codebase
 
