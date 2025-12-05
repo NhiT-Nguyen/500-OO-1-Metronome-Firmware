@@ -6,8 +6,8 @@ The following ReadMe is unchanged as of Tuesday, October 14, 2025 10:22:25 AM GM
 
 # Resources Used to Develop Code
 
-1. https://pub.dev/packages/metronome
-2. https://chatgpt.com/
+1. https://github.com/sicreative/FMetronome (code was not used, however drew inspiration from open source flutter metronome program)
+2. https://chatgpt.com/ (used to aid in adding sound feature to metronome)
 
 # Frame Firmware & RTL Codebase
 
