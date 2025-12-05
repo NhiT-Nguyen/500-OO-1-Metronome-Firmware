@@ -7,10 +7,7 @@ The following ReadMe is unchanged as of Tuesday, October 14, 2025 10:22:25 AM GM
 # Resources Used to Develop Code
 
 https://pub.dev/packages/metronome
-
-
-
-
+https://chatgpt.com/
 
 # Frame Firmware & RTL Codebase
 
