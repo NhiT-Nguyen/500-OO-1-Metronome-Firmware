@@ -4,11 +4,6 @@ This repository is a clone of the Frame Codebase by Brilliant Labs, with code ad
 The repository from Brilliant Labs can be accessed ![here](https://github.com/brilliantlabsAR/frame-codebase#).
 The following ReadMe is unchanged as of Tuesday, October 14, 2025 10:22:25 AM GMT-06:00 DST
 
-# Resources Used to Develop Code
-
-1. https://github.com/sicreative/FMetronome (code was not used, however drew inspiration from open source flutter metronome program)
-2. https://chatgpt.com/ (used to aid in adding sound feature to metronome)
-
 # Frame Firmware & RTL Codebase
 
 Welcome to the complete codebase of the Frame hardware. For regular usage, check out the docs [here](https://github.com/brilliantlabsAR/frame-codebase#).
