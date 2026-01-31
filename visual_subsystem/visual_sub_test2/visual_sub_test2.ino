@@ -84,6 +84,25 @@ void loop() {
    * Example: beatCount=5 -> 5 % 4 = 1 (second beat)
    */
   int currentBeat = (beatCount % 4);
+
+  /*
+   * Beat timing logic
+   * 
+   * Calculate milliseconds between beats:
+   * beatInterval = 60000ms (1 minute) / bpm
+   * 
+   * Example: 50 BPM -> 60000 / 50 = 1200ms between beats
+   */
+  unsigned long beatInterval = 60000 / bpm;
+
+  /*
+   * Subdivision logic
+   * Each beat is divided into 4 subdivisions (0-3)
+   * Current subdivision is determined by the beatCount multiplied by 4
+   */
+  unsigned long subInterval = beatInterval / 4;
+  unsigned long lastSubTime = millis() - lastBeatTime;
+  int currentSub = (lastSubTime / subInterval) % 4;
   
   /* 
    * Beat box dimensions and positioning
@@ -97,9 +116,15 @@ void loop() {
   int boxSpacing = 10;
   int startX = 13;
   int boxY = 30;
+
+  // Subdivision box dimensions
+  int subBoxWidth = 10;
+  int subBoxHeight = 10;
+  int subBoxSpacing = 2;
+  int subBoxY = boxY + boxHeight + 5;  
   
   /*
-   * Draw 4 beat boxes
+   * Draw 4 beat boxes and subdivisions
    * Loop through each box (i = 0, 1, 2, 3)
    */
   for (int i = 0; i < 4; i++) {
@@ -122,6 +147,19 @@ void loop() {
     // Position text roughly centred in the box
     videoOut.setCursor(x + 18, boxY + 22);
     videoOut.print(i + 1);  // i+1 converts 0-3 to 1-4
+
+    // Draw subdiviosion boxes
+    for (int j = 0; j < 4; j++) {
+      int totalSubWidth = (4 * subBoxWidth) + (3 * subBoxSpacing);
+      int subStartX = x + (boxWidth - totalSubWidth) / 2;
+      int subX = subStartX + (j * (subBoxWidth + subBoxSpacing));
+
+      if( i == currentBeat && j == currentSub) {
+        videoOut.fillRect(subX, subBoxY, subBoxWidth, subBoxHeight, activeColor);
+      } else {
+        videoOut.fillRect(subX, subBoxY, subBoxWidth, subBoxHeight, boxColor);
+      }
+    }
   }
   
   /*
@@ -147,16 +185,6 @@ void loop() {
     videoOut.setCursor(75, 145);
   }
   videoOut.print(bpm);
-  
-  /*
-   * Beat timing logic
-   * 
-   * Calculate milliseconds between beats:
-   * beatInterval = 60000ms (1 minute) / bpm
-   * 
-   * Example: 50 BPM -> 60000 / 50 = 1200ms between beats
-   */
-  unsigned long beatInterval = 60000 / bpm;
   
   /*
    * Check if it is time for the next beat
