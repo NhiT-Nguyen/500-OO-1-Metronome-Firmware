@@ -11,12 +11,24 @@
  * 
  * Libraries:
  *   - ESP_8_BIT_GFX: Generates composite video signal using ESP32's DAC
- *  
+ * 
+ * JSON Format:
+ * {
+ *   "command": "start" or "stop",
+ *   "bpm": 60,
+ *   "numBeats": 4,
+ *   "beats": [
+ *    {"subdivisions": 0},
+ *    {"subdivisions": 2},
+ *    {"subdivisions": 3},
+ *    {"subdivisions": 4}
+ * } 
  * 
  * Note: AI (Claude) was used to assist with debugging
  */
 
 #include "ESP_8_BIT_GFX.h"
+#include <ArduinoJson.h>
 
 /*
  * Video output configuration
@@ -34,6 +46,62 @@ ESP_8_BIT_GFX videoOut(true, 8);
 int bpm = 50;
 int beatCount = 0;
 unsigned long lastBeatTime = 0;
+
+// Beats configuration
+struct BeatConfig {
+  int numBeats;                  
+  int subdivisions[4];           
+  bool isRunning;                
+};
+
+// Initialize with default values
+BeatConfig config = {
+  4,              
+  {0, 0, 0, 0},   
+  false            
+};
+
+
+// Parse JSON string
+// Code inspired from: https://arduinojson.org/v7/assistant/#/step1
+bool parseJson(const char* input) {
+  JsonDocument doc;
+  DeserializationError error = deserializeJson(doc, input);
+
+  if (error) {
+    Serial.print("deserializeJson() failed: ");
+    Serial.println(error.c_str());
+    return false;
+  }
+
+  const char* command = doc["command"]; 
+  if (command == nullptr) {
+    Serial.println("No command found in JSON");
+    return false;
+  }
+
+  if (strcmp(command, "start") == 0) {
+    config.isRunning = true;
+    beatCount = 0;          
+    lastBeatTime = millis();
+  } else if (strcmp(command, "stop") == 0) {
+    config.isRunning = false;
+    beatCount = 0;
+    lastBeatTime = 0;
+    return true;
+  }
+
+  bpm = doc["bpm"];
+  config.numBeats = doc["numBeats"]; 
+
+  int beatIndex = 0;
+  for (JsonObject beat : doc["beats"].as<JsonArray>()) {
+    config.subdivisions[beatIndex] = beat["subdivisions"];
+    beatIndex++;
+  }
+
+  return true;
+}
 
 /*
  * Colour definitions (RGB332 format)
@@ -72,6 +140,11 @@ void setup() {
  * Draws the display and handles beat timing
  */
 void loop() {
+  // Only update display if running
+  if (!config.isRunning) {
+    return; 
+  }
+
   // Wait for the next video frame (synchronizes drawing with display refresh)
   videoOut.waitForFrame();
   
@@ -83,7 +156,7 @@ void loop() {
    * Uses modulo (%) to cycle through 0, 1, 2, 3, 0, 1, 2, 3...
    * Example: beatCount=5 -> 5 % 4 = 1 (second beat)
    */
-  int currentBeat = (beatCount % 4);
+  int currentBeat = (beatCount % config.numBeats);
 
   /*
    * Beat timing logic
@@ -97,13 +170,20 @@ void loop() {
 
   /*
    * Subdivision logic
-   * Each beat is divided into 4 subdivisions (0-3)
-   * Current subdivision is determined by the beatCount multiplied by 4
+   * Each beat is divided into subdivisions (0-3)
    */
-  unsigned long subInterval = beatInterval / 4;
-  unsigned long lastSubTime = millis() - lastBeatTime;
-  int currentSub = (lastSubTime / subInterval) % 4;
-  
+
+  // Calculate current subdivision
+  int currentBeatIndex = currentBeat;
+  int currentSubdivisions = config.subdivisions[currentBeatIndex];
+  int currentSub = 0;
+
+  if(currentSubdivisions > 0){
+    unsigned long subInterval = beatInterval / currentSubdivisions;
+    unsigned long lastSubTime = millis() - lastBeatTime;
+    currentSub = (lastSubTime / subInterval) % currentSubdivisions;
+  } 
+
   /* 
    * Beat box dimensions and positioning
    * 
@@ -127,12 +207,12 @@ void loop() {
    * Draw 4 beat boxes and subdivisions
    * Loop through each box (i = 0, 1, 2, 3)
    */
-  for (int i = 0; i < 4; i++) {
+  for (int i = 0; i < config.numBeats; i++) {
     // Calculate x position for this box
     // Each box is offset by (boxWidth + boxSpacing) from the previous one
     int x = startX + (i * (boxWidth + boxSpacing));
     
-    if (i == currentBeat) {
+    if (i == currentBeat && config.isRunning) {
       // Active beat - draw yellow filled rectangle
       videoOut.fillRect(x, boxY, boxWidth, boxHeight, activeColor);
       videoOut.setTextColor(0x00);  // Black text for contrast on yellow
@@ -149,15 +229,18 @@ void loop() {
     videoOut.print(i + 1);  // i+1 converts 0-3 to 1-4
 
     // Draw subdiviosion boxes
-    for (int j = 0; j < 4; j++) {
-      int totalSubWidth = (4 * subBoxWidth) + (3 * subBoxSpacing);
-      int subStartX = x + (boxWidth - totalSubWidth) / 2;
-      int subX = subStartX + (j * (subBoxWidth + subBoxSpacing));
-
-      if( i == currentBeat && j == currentSub) {
-        videoOut.fillRect(subX, subBoxY, subBoxWidth, subBoxHeight, activeColor);
-      } else {
-        videoOut.fillRect(subX, subBoxY, subBoxWidth, subBoxHeight, boxColor);
+    int beatSubdivisions = config.subdivisions[i];
+    if (beatSubdivisions > 0) {
+      for (int j = 0; j < beatSubdivisions; j++) {
+        int totalSubWidth = (beatSubdivisions * subBoxWidth) + ((beatSubdivisions - 1) * subBoxSpacing);
+        int subStartX = x + (boxWidth - totalSubWidth) / 2;
+        int subX = subStartX + (j * (subBoxWidth + subBoxSpacing));
+  
+        if( i == currentBeat && j == currentSub && config.isRunning){ 
+          videoOut.fillRect(subX, subBoxY, subBoxWidth, subBoxHeight, activeColor);
+        } else {
+          videoOut.fillRect(subX, subBoxY, subBoxWidth, subBoxHeight, boxColor);
+        }
       }
     }
   }
@@ -191,7 +274,7 @@ void loop() {
    * millis() returns milliseconds since ESP32 started
    * If enough time has passed since last beat, trigger next beat
    */
-  if (millis() - lastBeatTime >= beatInterval) {
+  if ((millis() - lastBeatTime >= beatInterval) && config.isRunning) {
     // Record the time of this beat
     lastBeatTime = millis();
     
@@ -200,6 +283,6 @@ void loop() {
     
     // Print beat number to serial monitor for debugging
     Serial.print("Beat: ");
-    Serial.println((beatCount % 4) + 1);
+    Serial.println(((beatCount-1) % config.numBeats) + 1);
   }
 }
