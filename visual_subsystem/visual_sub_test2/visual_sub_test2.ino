@@ -127,6 +127,7 @@ void setup() {
   Serial.begin(115200);
   Serial.println("Tempo Titans");
   
+  setupBLE();
   // Initialize composite video output
   videoOut.begin();
   
@@ -144,6 +145,9 @@ void loop() {
   if (!config.isRunning) {
     return; 
   }
+
+  // check for Bluetooth events
+  checkForBluetoothEvents();
 
   // Wait for the next video frame (synchronizes drawing with display refresh)
   videoOut.waitForFrame();
