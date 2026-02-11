@@ -37,66 +37,6 @@ BLEWordCharacteristic MGDisplaySubAudioCharacteristic("da1e24f5-e3c4-472f-8d4b-0
 BLEBoolCharacteristic MGDisplayCurrentlyPlayingCharacteristic("da1e24f6-e3c4-472f-8d4b-0e3390344fb4", BLERead | BLEWrite);
 }
 
-/*
-  Event handlers: Will need to be moved to the visual_sub_test_2.ino file due to order of variable declaration
-  (specifically, Arduino compiles sketches alphabetically)
-*/
-{
-// assign event handler for bpm characteristic
-MGDisplayBPMCharacteristic.setEventHandler(BLEWritten, MGDisplayBPMCharacteristicWritten);
-void MGDisplayBPMCharacteristicWritten(BLEDevice central, BLECharacteristic characteristic) {
-  // new value written to characteristc, update the local characteristic
-  Serial.print("Characteristic event, written: ");
-  bpm = characteristic.value();
-}
-
-// assign event handler for numbers of beats characteristic
-MGDisplayNumBeatsCharacteristic.setEventHandler(BLEWritten, MGDisplayNumBeatsCharacteristicWritten);
-void MGDisplayNumBeatsCharacteristicWritten(BLEDevice central, BLECharacteristic characteristic) {
-  // new value written to characteristc, update the local characteristic
-  Serial.print("Characteristic event, written: ");
-  config.numBeats = characteristic.value();
-}
-
-
-// assign event handler for subdivisions characteristic
-MGDisplaySubdivisionsCharacteristic.setEventHandler(BLEWritten, MGDisplaySubdivisionsCharacteristicWritten);
-void MGDisplaySubdivisionsCharacteristic(BLEDevice central, BLECharacteristic characteristic) {
-  // new value written to characteristc, update the local characteristic
-  Serial.print("Characteristic event, written: ");
-  for (int i = 0;i<config.subdivision.length; i++){
-   config.subdivision[i] = int(characteristic.value()[i]);
-  }
-}
-
-// Uncomment when volume buttons are set-up
-// // assign event handler for volume characteristic
-// MGDisplayVolumeCharacteristic.setEventHandler(BLEWritten, MGDisplayVolumeCharacteristicWritten);
-// void MGDisplayVolumeCharacteristicWritten(BLEDevice central, BLECharacteristic characteristic) {
-//   // new value written to characteristc, update the local characteristic
-//   Serial.print("Characteristic event, written: ");
-//   volume = characteristic.value();
-// }
-
-
-// assign event handler for subdivision audio characteristic
-MGDisplaySubAudioCharacteristic.setEventHandler(BLEWritten, MGDisplaySubAudioCharacteristicWritten);
-void MGDisplaySubAudioCharacteristicWritten(BLEDevice central, BLECharacteristic characteristic) {
-  // new value written to characteristc, update the local characteristic
-  Serial.print("Characteristic event, written: ");
-  subdivisionAudio = int(characteristic.value());
-  
-}
-
-// assign event handler for currently playing boolean characteristic
-MGDisplayCurrentlyPlayingCharacteristic.setEventHandler(BLEWritten, MGDisplayCurrentlyPlayingCharacteristicWritten);
-void MGDisplayCurrentlyPlayingCharacteristicWritten(BLEDevice central, BLECharacteristic characteristic) {
-  // new value written to characteristc, update the local characteristic
-  Serial.print("Characteristic event, written: ");
-  config.isRunning = characteristic.value();
-}
-
-}
 
 /*
   Function to setup Bluetooth service and characteristics.
@@ -135,7 +75,7 @@ void setupBLE(){
   BLE.addService(MGDisplayService);
 
   // set intial values for each Bluetooth characteristic
-  MGDisplayBPMCharacteristic.writeValue(40);
+  MGDisplayBPMCharacteristic.writeValue(50);
   MGDisplayNumBeatsCharacteristic.writeValue(4);
   MGDisplaySubdivisionsCharacteristic.writeValue("");
   MGDisplayVolumeCharacteristic.writeValue(0);
