@@ -30,7 +30,7 @@
  * First parameter:  true = NTSC (North America, 30fps), false = PAL (Europe, 25fps) - Analog TV standards
  * Second parameter: 8 = 8-bit colour mode (RGB332 format, 256 colours)
  */
-// ESP_8_BIT_GFX lcd(true, 8);
+// ESP_8_BIT_GFX ////lcd(true, 8);
 
 /*
  * BPM and timing variables
@@ -55,7 +55,36 @@
 #include <LGFX_AUTODETECT.hpp>  // クラス"LGFX"を準備します
 // #include <lgfx_user/LGFX_ESP32_sample.hpp> // またはユーザ自身が用意したLGFXクラスを準備します
 
-static LGFX lcd;  
+// static LGFX lcd;
+
+int bpm = 50;
+int beatCount = 0;
+unsigned long lastBeatTime = 0;
+
+// Beats configuration
+struct BeatConfig {
+  int numBeats;
+  int beatAudio[4];
+  int showSubs[4];                
+  int subdivisions[4];
+  int subAudio[4][4];           
+  bool isRunning;                
+};
+
+// Initialize with default values
+BeatConfig config = {
+  4,
+  {0, 0, 0, 0},  
+  {0, 0, 0, 0},              
+  {0, 0, 0, 0},
+  {
+    {0, 0, 0, 0},
+    {0, 0, 0, 0},
+    {0, 0, 0, 0},
+    {0, 0, 0, 0},
+  },   
+  false            
+};
 
 BLEServer *server = NULL;
 BLECharacteristic *ble_bpm = NULL;
@@ -87,40 +116,13 @@ class ServerCallbacks: public BLEServerCallbacks {
 };
 
 bool toBool(String src){
-  if (*src.equals("true")){
+  if (src.equals("true")){
     return true;
-  else
+  }else{
     return false;
   }
 } 
-int bpm = 50;
-int beatCount = 0;
-unsigned long lastBeatTime = 0;
 
-// Beats configuration
-struct BeatConfig {
-  int numBeats;
-  int beatAudio[4];
-  int showSubs[4];                
-  int subdivisions[4];
-  int subAudio[4][4];           
-  bool isRunning;                
-};
-
-// Initialize with default values
-BeatConfig config = {
-  4,
-  {0, 0, 0, 0},  
-  {0, 0, 0, 0},              
-  {0, 0, 0, 0},
-  {
-    {0, 0, 0, 0},
-    {0, 0, 0, 0},
-    {0, 0, 0, 0},
-    {0, 0, 0, 0},
-  },   
-  false            
-};
 
 /*
  * Colour definitions (RGB332 format)
@@ -149,45 +151,45 @@ uint8_t yellowColor = 0xFC;    // Yellow
 */
 class bpmCharCallbacks: public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic *pCharacteristic) {
-    bpm = pCharacteristic->getValue().toString()().toInt(); // Get the new data
+    bpm = pCharacteristic->getValue().toInt(); // Get the new data
   }
 };
 
 class meterCharCallbacks: public BLECharacteristicCallbacks {
-  void onWrite(BLECharacteristic *pCharacteristic) {
-    String rawString = pCharacteristic->getValue().toString()();
+  void onWrite(BLECharacteristic* pCharacteristic) {
+    String rawString = pCharacteristic->getValue();
     if ((rawString.compareTo("2/4"))==0){
-      &config->numBeats = 2;
+      config.numBeats = 2;
 
     }else if ((rawString.compareTo("3/4"))==0){
-      &config->numBeats = 3;
+      config.numBeats = 3;
 
     }else if ((rawString.compareTo("4/4"))==0){
-    &config->numBeats = 4;
+    config.numBeats = 4;
     }
   }
 };
 
 class beatAudioCharCallbacks: public BLECharacteristicCallbacks {
-  void onWrite(BLECharacteristic *pCharacteristic) {
-    rawString = pCharacteristic->getValue().toString()();
+  void onWrite(BLECharacteristic* pCharacteristic) {
+    String rawString = pCharacteristic->getValue();
     for (int i =0; i < 4; i++){
-      &config->beatAudio[i] = rawString.charAt(i).toInt();
+      config.beatAudio[i] = rawString.charAt(i) - '0';
     }
   }
 };
 
 class showSubsCharCallbacks: public BLECharacteristicCallbacks {
-  void onWrite(BLECharacteristic *pCharacteristic) {
-    rawString = pCharacteristic->getValue().toString()();
+  void onWrite(BLECharacteristic* pCharacteristic) {
+    String rawString = pCharacteristic->getValue();
     for (int i =3; i > -1; i--){
-      indexTrue = rawString.lastIndexOf('true');
-      indexFalse = rawString.lastIndexOf('false');
+      int indexTrue = rawString.lastIndexOf('true');
+      int indexFalse = rawString.lastIndexOf('false');
       if (indexTrue > indexFalse){
-        &config->showSubs[i]=true;
+        config.showSubs[i]=true;
         rawString.remove(indexTrue);
       }else{
-        &config->showSubs[i] = false;
+        config.showSubs[i] = false;
         rawString.remove(indexFalse);
       }
     }
@@ -195,59 +197,59 @@ class showSubsCharCallbacks: public BLECharacteristicCallbacks {
 };
 
 class numSubsCharCallbacks: public BLECharacteristicCallbacks {
-  void onWrite(BLECharacteristic *pCharacteristic) {
-  rawString = pCharacteristic->getValue().toString()();
+  void onWrite(BLECharacteristic* pCharacteristic) {
+  String rawString = pCharacteristic->getValue();
     for (int i = 0; i < 4; i++){
-      &config->subdivisions[i] = rawString.charAt((3*i)+1).toInt();
+      config.subdivisions[i] = rawString.charAt((3*i)+1) - '0';
 
     }
   }
 };
 
 class subAudio1CharCallbacks: public BLECharacteristicCallbacks {
-  void onWrite(BLECharacteristic *pCharacteristic) {
-  rawString = pCharacteristic->getValue().toString()();
+  void onWrite(BLECharacteristic* pCharacteristic) {
+  String rawString = pCharacteristic->getValue();
   int index = 0;
     for (int i =0; i < 2; i++){
       for (int j = 0; j <4; j++){
-        &config->subAudio[i][j] = rawString.charAt(index).toInt();
+        config.subAudio[i][j] = rawString.charAt(index) - '0';
       }
     }
   }
 };
 
 class subAudio2CharCallbacks: public BLECharacteristicCallbacks {
-  void onWrite(BLECharacteristic *pCharacteristic) {
-  rawString = pCharacteristic->getValue().toString();
+  void onWrite(BLECharacteristic* pCharacteristic) {
+  String rawString = pCharacteristic->getValue();
   int index = 0;
     for (int i =2; i < 4; i++){
       for (int j = 0; j < 4; j++){
-        &config->subAudio[i][j] = rawString.charAt(index).toInt();
+        config.subAudio[i][j] = rawString.charAt(index) - '0'; 
       }
     }
   }
 };
 
 class isPlayingCharCallbacks: public BLECharacteristicCallbacks {
-  void onWrite(BLECharacteristic *pCharacteristic) {
-    &config->isRunning = toBool(pCharacteristic->getValue().toString());
+  void onWrite(BLECharacteristic* pCharacteristic) {
+    config.isRunning = toBool(pCharacteristic->getValue());
   }
 };
 
 class fromScanCharCallbacks: public BLECharacteristicCallbacks {
-  void onWrite(BLECharacteristic *pCharacteristic) {
+  void onWrite(BLECharacteristic* pCharacteristic) {
 
   }
 };
 
 class scanValues1CharCallbacks: public BLECharacteristicCallbacks {
-  void onWrite(BLECharacteristic *pCharacteristic) {
+  void onWrite(BLECharacteristic* pCharacteristic) {
 
   }
 };
 
-class scanValues1CharCallbacks: public BLECharacteristicCallbacks {
-  void onWrite(BLECharacteristic *pCharacteristic) {
+class scanValues2CharCallbacks: public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic* pCharacteristic) {
 
   }
 };
@@ -368,10 +370,10 @@ void setup() {
   Serial.println("Tempo Titans");
   setupBLE();
   
-  lcd.init();
-  lcd.setRotation(1);
-  lcd.setBrightness(255);
-  lcd.setColorDepth(24);
+  ////lcd.init();
+  ////lcd.setRotation(1);
+  ////lcd.setBrightness(255);
+  //lcd.setColorDepth(24);
 
 }
 
@@ -387,144 +389,152 @@ void loop() {
     return; 
   }
 
-  // // Wait for the next video frame (synchronizes drawing with display refresh)
-  // lcd.waitForFrame();
+  // // // Wait for the next video frame (synchronizes drawing with display refresh)
+  // // //lcd.waitForFrame();
   
-  // Clear the screen by filling with background colour
-  lcd.fillScreen(bgColor);
+  // // Clear the screen by filling with background colour
+  // //lcd.fillScreen(bgColor);
   
-  /*
-   * Calculate current beat (0-3)
-   * Uses modulo (%) to cycle through 0, 1, 2, 3, 0, 1, 2, 3...
-   * Example: beatCount=5 -> 5 % 4 = 1 (second beat)
-   */
-  int currentBeat = (beatCount % config.numBeats);
+  // /*
+  //  * Calculate current beat (0-3)
+  //  * Uses modulo (%) to cycle through 0, 1, 2, 3, 0, 1, 2, 3...
+  //  * Example: beatCount=5 -> 5 % 4 = 1 (second beat)
+  //  */
+  // int currentBeat = (beatCount % config.numBeats);
 
-  /*
-   * Beat timing logic
-   * 
-   * Calculate milliseconds between beats:
-   * beatInterval = 60000ms (1 minute) / bpm
-   * 
-   * Example: 50 BPM -> 60000 / 50 = 1200ms between beats
-   */
-  unsigned long beatInterval = 60000 / bpm;
+  // /*
+  //  * Beat timing logic
+  //  * 
+  //  * Calculate milliseconds between beats:
+  //  * beatInterval = 60000ms (1 minute) / bpm
+  //  * 
+  //  * Example: 50 BPM -> 60000 / 50 = 1200ms between beats
+  //  */
+  // unsigned long beatInterval = 60000 / bpm;
 
-  /*
-   * Subdivision logic
-   * Each beat is divided into subdivisions (0-3)
-   */
+  // /*
+  //  * Subdivision logic
+  //  * Each beat is divided into subdivisions (0-3)
+  //  */
 
-  // Calculate current subdivision
-  int currentBeatIndex = currentBeat;
-  int currentSubdivisions = config.subdivisions[currentBeatIndex];
-  int currentSub = 0;
+  // // Calculate current subdivision
+  // int currentBeatIndex = currentBeat;
+  // int currentSubdivisions = config.subdivisions[currentBeatIndex];
+  // int currentSub = 0;
 
-  if(currentSubdivisions > 0){
-    unsigned long subInterval = beatInterval / currentSubdivisions;
-    unsigned long lastSubTime = millis() - lastBeatTime;
-    currentSub = (lastSubTime / subInterval) % currentSubdivisions;
-  } 
+  // if(currentSubdivisions > 0){
+  //   unsigned long subInterval = beatInterval / currentSubdivisions;
+  //   unsigned long lastSubTime = millis() - lastBeatTime;
+  //   currentSub = (lastSubTime / subInterval) % currentSubdivisions;
+  // } 
 
-  /* 
-   * Beat box dimensions and positioning
-   * 
-   * Screen width is 256 pixels
-   * Total width of boxes: (4 boxes * 50) + (3 gaps * 10) = 230 pixels
-   * Starting X position: (256 - 230) / 2 = 13 pixels (centres the boxes)
-   */
-  int boxWidth = 50;
-  int boxHeight = 60;
-  int boxSpacing = 10;
-  int startX = 13;
-  int boxY = 30;
+  // /* 
+  //  * Beat box dimensions and positioning
+  //  * 
+  //  * Screen width is 256 pixels
+  //  * Total width of boxes: (4 boxes * 50) + (3 gaps * 10) = 230 pixels
+  //  * Starting X position: (256 - 230) / 2 = 13 pixels (centres the boxes)
+  //  */
+  // int boxWidth = 50;
+  // int boxHeight = 60;
+  // int boxSpacing = 10;
+  // int startX = 13;
+  // int boxY = 30;
 
-  // Subdivision box dimensions
-  int subBoxWidth = 10;
-  int subBoxHeight = 10;
-  int subBoxSpacing = 2;
-  int subBoxY = boxY + boxHeight + 5;  
+  // // Subdivision box dimensions
+  // int subBoxWidth = 10;
+  // int subBoxHeight = 10;
+  // int subBoxSpacing = 2;
+  // int subBoxY = boxY + boxHeight + 5;  
   
-  /*
-   * Draw 4 beat boxes and subdivisions
-   * Loop through each box (i = 0, 1, 2, 3)
-   */
-  for (int i = 0; i < config.numBeats; i++) {
-    // Calculate x position for this box
-    // Each box is offset by (boxWidth + boxSpacing) from the previous one
-    int x = startX + (i * (boxWidth + boxSpacing));
+  // // void cycleBeatMode(int index, int subIndex) {
+  // //   if (subIndex == -1) {
+  // //     beatAudio[index] = (beatAudio[index] + 1) % 5;
+  // //   } else {
+  // //     subAudio[index][subIndex] = (subAudio[index][subIndex] + 1) % 5;
+  // //   }
+  // // }
+
+  // /*
+  //  * Draw 4 beat boxes and subdivisions
+  //  * Loop through each box (i = 0, 1, 2, 3)
+  //  */
+  // for (int i = 0; i < config.numBeats; i++) {
+  //   // Calculate x position for this box
+  //   // Each box is offset by (boxWidth + boxSpacing) from the previous one
+  //   int x = startX + (i * (boxWidth + boxSpacing));
     
-    if (i == currentBeat && config.isRunning) {
-      // Active beat - draw yellow filled rectangle
-      lcd.fillRect(x, boxY, boxWidth, boxHeight, activeColor);
-      lcd.setTextColor(0x00);  // Black text for contrast on yellow
-    } else {
-      // Inactive beat - draw blue filled rectangle
-      lcd.fillRect(x, boxY, boxWidth, boxHeight, boxColor);
-      lcd.setTextColor(0xFF);  // White text for contrast on blue
-    }
+  //   if (i == currentBeat && config.isRunning) {
+  //     // Active beat - draw yellow filled rectangle
+  //     //lcd.fillRect(x, boxY, boxWidth, boxHeight, activeColor);
+  //     //lcd.setTextColor(0x00);  // Black text for contrast on yellow
+  //   } else {
+  //     // Inactive beat - draw blue filled rectangle
+  //     //lcd.fillRect(x, boxY, boxWidth, boxHeight, boxColor);
+  //     //lcd.setTextColor(0xFF);  // White text for contrast on blue
+  //   }
     
     // Draw beat number (1, 2, 3, or 4) inside the box
-    lcd.setTextSize(2);
+    //lcd.setTextSize(2);
     // Position text roughly centred in the box
-    lcd.setCursor(x + 18, boxY + 22);
-    lcd.print(i + 1);  // i+1 converts 0-3 to 1-4
+    //lcd.setCursor(x + 18, boxY + 22);
+    //lcd.print(i + 1);  // i+1 converts 0-3 to 1-4
 
-    // Draw subdiviosion boxes
-    int beatSubdivisions = config.subdivisions[i];
-    if (beatSubdivisions > 0) {
-      for (int j = 0; j < beatSubdivisions; j++) {
-        int totalSubWidth = (beatSubdivisions * subBoxWidth) + ((beatSubdivisions - 1) * subBoxSpacing);
-        int subStartX = x + (boxWidth - totalSubWidth) / 2;
-        int subX = subStartX + (j * (subBoxWidth + subBoxSpacing));
+  //   // Draw subdiviosion boxes
+  //   int beatSubdivisions = config.subdivisions[i];
+  //   if (beatSubdivisions > 0) {
+  //     for (int j = 0; j < beatSubdivisions; j++) {
+  //       int totalSubWidth = (beatSubdivisions * subBoxWidth) + ((beatSubdivisions - 1) * subBoxSpacing);
+  //       int subStartX = x + (boxWidth - totalSubWidth) / 2;
+  //       int subX = subStartX + (j * (subBoxWidth + subBoxSpacing));
   
-        if( i == currentBeat && j == currentSub && config.isRunning){ 
-          lcd.fillRect(subX, subBoxY, subBoxWidth, subBoxHeight, activeColor);
-        } else {
-          lcd.fillRect(subX, subBoxY, subBoxWidth, subBoxHeight, boxColor);
-        }
-      }
-    }
-  }
+  //       if( i == currentBeat && j == currentSub && config.isRunning){ 
+  //         //lcd.fillRect(subX, subBoxY, subBoxWidth, subBoxHeight, activeColor);
+  //       } else {
+  //         //lcd.fillRect(subX, subBoxY, subBoxWidth, subBoxHeight, boxColor);
+  //       }
+  //     }
+  //   }
+  // }
   
   /*
    * Draw "Current BPM:" label
    */
-  lcd.setTextColor(bpmColor);
-  lcd.setTextSize(2);
-  lcd.setCursor(50, 110);
-  lcd.print("Current BPM:");
+  //lcd.setTextColor(bpmColor);
+  //lcd.setTextSize(2);
+  //lcd.setCursor(50, 110);
+  //lcd.print("Current BPM:");
   
   /*
    * Draw BPM number
    * Adjusts x position based on number of digits to keep it centred
    */
-  lcd.setTextColor(textColor);
-  lcd.setTextSize(4);  // Larger text for BPM value
+  //lcd.setTextColor(textColor);
+  //lcd.setTextSize(4);  // Larger text for BPM value
   
-  if (bpm < 100) {
-    // Two digits - position further right
-    lcd.setCursor(95, 145);
-  } else {
-    // Three digits - position further left
-    lcd.setCursor(75, 145);
-  }
-  lcd.print(bpm);
+  // if (bpm < 100) {
+  //   // Two digits - position further right
+  //   //lcd.setCursor(95, 145);
+  // } else {
+  //   // Three digits - position further left
+  //   //lcd.setCursor(75, 145);
+  // }
+  //lcd.print(bpm);
   
   /*
    * Check if it is time for the next beat
    * millis() returns milliseconds since ESP32 started
    * If enough time has passed since last beat, trigger next beat
    */
-  if ((millis() - lastBeatTime >= beatInterval) && config.isRunning) {
-    // Record the time of this beat
-    lastBeatTime = millis();
+  // if ((millis() - lastBeatTime >= beatInterval) && config.isRunning) {
+  //   // Record the time of this beat
+  //   lastBeatTime = millis();
     
-    // Increment beat counter
-    beatCount++;
+  //   // Increment beat counter
+  //   beatCount++;
     
-    // Print beat number to serial monitor for debugging
-    // Serial.print("Beat: ");
-    // Serial.println(((beatCount-1) % config.numBeats) + 1);
-  }
+  //   // Print beat number to serial monitor for debugging
+  //   // Serial.print("Beat: ");
+  //   // Serial.println(((beatCount-1) % config.numBeats) + 1);
+  // }
 }
