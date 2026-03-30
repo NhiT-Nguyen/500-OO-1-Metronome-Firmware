@@ -1,159 +1,274 @@
-#include <ArduinoBLE.h>
-#include "ESP_8_BIT_GFX.h"
-#include <ArduinoJson.h>
 
-/*
-  You can use a generic Bluetooth® Low Energy central app, like LightBlue (iOS and Android) or
-  nRF Connect (Android), to interact with the services and characteristics
-  created in this sketch.
+// // #include <BLEDevice.h>
+// // #include <BLESecurity.h>
+// // #include <BLEServer.h>
+// // #include <BLEUtils.h>
+// // #include <BLE2902.h>
 
-  Format adapted from example code from ArduinoBLE library (Button LED)
-*/
+// // #define LGFX_AUTODETECT // 自動認識 (D-duino-32 XS, WT32-SC01, PyBadge はパネルID読取りが出来ないため自動認識の対象から外れています)
 
-/*
- create service that manages metronome glasses characteristics
-*/
-BLEService metronome_glasses("FFFF");
+// // // 複数機種の定義を行うか、LGFX_AUTODETECTを定義することで、実行時にボードを自動認識します。
 
-// Begin code: EnhancedAdvertising.ino example
-// Advertising parameters should have a global scope. Do NOT define them in 'setup' or in 'loop'
-const uint8_t manufactData[4] = {0x01, 0x02, 0x03, 0x04};
-const uint8_t serviceData[3] = {0x00, 0x01, 0x02};
-// End code: EnhancedAdvertising.ino
+// // // ヘッダをincludeします。
+// // #include <LovyanGFX.hpp>
 
+// // #include <LGFX_AUTODETECT.hpp>  // クラス"LGFX"を準備します
+// // // #include <lgfx_user/LGFX_ESP32_sample.hpp> // またはユーザ自身が用意したLGFXクラスを準備します
 
-// create bpm characteristic and allow remote device to read and write
-BLEStringCharacteristic ble_bpm("FFF0", BLERead | BLEWrite | BLEWriteWithoutResponse);
+// // static LGFX lcd;  
 
-// create number of beats characteristic and allow remote device to read and write
-BLEStringCharacteristic ble_meter("FFF1", BLERead | BLEWrite | BLEWriteWithoutResponse);
+// // BLEServer *server = NULL;
+// // BLECharacteristic *ble_bpm = NULL;
+// // BLECharacteristic *ble_meter = NULL;
+// // BLECharacteristic *ble_beatAudio = NULL;
+// // BLECharacteristic *ble_showSubs = NULL;
+// // BLECharacteristic *ble_numSubs = NULL;
+// // BLECharacteristic *ble_subAudio1 = NULL;
+// // BLECharacteristic *ble_subAudio2 = NULL;
+// // BLECharacteristic *ble_isPlaying = NULL;
+// // BLECharacteristic *ble_fromScan = NULL;
+// // BLECharacteristic *ble_scanValues1 = NULL;
+// // BLECharacteristic *ble_scanValues2 = NULL;
 
-// create beat audio characteristic and allow remote device to read and write
-BLEStringCharacteristic ble_beatAudio("FFF2", BLERead | BLEWrite | BLEWriteWithoutResponse);
+// // BLESecurity *pSecurity = new BLESecurity();
 
-// create subdivisions enabled/disabled characteristic and allow remote device to read and write
-BLEStringCharacteristic ble_showSubs("FFF3", BLERead | BLEWrite | BLEWriteWithoutResponse);
+// // bool deviceConnected = false;
+// // uint32_t value = 0;
 
-// create subdivision number beat characteristic and allow remote device to read and write
-BLEStringCharacteristic ble_numSubs("FFF4", BLERead | BLEWrite | BLEWriteWithoutResponse);
+// // #define SERVICE_UUID        "FFFF"
 
-/// Create subdivision audio characteristic and allow remote device to read and write.
-// This characteristic is 1/2 and holds the audio data for the beats 1 & 2
-BLEStringCharacteristic ble_subAudio1("FFF5", BLERead | BLEWrite | BLEWriteWithoutResponse);
+// // class ServerCallbacks: public BLEServerCallbacks {
+// //     void onConnect(BLEServer* pServer) {
+// //       deviceConnected = true;
+// //     };
+// //     void onDisconnect(BLEServer* pServer) {
+// //       deviceConnected = false;
+// //     }
+// // };
 
-/// Create subdivision audio characteristic and allow remote device to read and write.
-// This characteristic is 2/2 and holds the audio data for the beats 3 & 4 if the current meter
-// has beats 3 & 4
-BLEStringCharacteristic ble_subAudio2("FFF6", BLERead | BLEWrite | BLEWriteWithoutResponse);
+// // bool toBool(String *src){
+// //   if (*src.equals("true")){
+// //     return true;
+// //   else
+// //     return false;
+// //   }
+// // }
 
-// Characteristic that holds the value of whether or not the central BLE device is currently playing
-BLEStringCharacteristic ble_isPlaying("FFF7", BLERead | BLEWrite | BLEWriteWithoutResponse);
+// /*
+// * SECTION: Characteristic Callbacks
+// *
+// * onWrite (BLECharacteristic): update associated metronome logic variable
+// * with new value from BLECharacteristic that was just written by central
+// */
+// class bpmCharCallbacks: public BLECharacteristicCallbacks {
+//   void onWrite(BLECharacteristic *pCharacteristic) {
+//     bpm = pCharacteristic->getValue().c_str().toInt(); // Get the new data
+//   }
+// };
 
-// Characteristic that holds the true/false values of whether the app
-// is running metronome data from scanned music
-BLEStringCharacteristic ble_fromScan("FFF8", BLERead | BLEWrite | BLEWriteWithoutResponse);
+// class meterCharCallbacks: public BLECharacteristicCallbacks {
+//   void onWrite(BLECharacteristic *pCharacteristic) {
+//     String rawString = pCharacteristic->getValue().c_str();
+//     if ((rawString.compareTo("2/4"))==0){
+//       config->numBeats = 2;
 
-// Characteristic that holds the scanned information from the sheet music
-// 1/2 characteristic, as some scanned information may be long if there
-// are multiple meter changes
-BLEStringCharacteristic ble_scanValues1("FFF9", BLERead | BLEWrite | BLEWriteWithoutResponse);
+//     }else if ((rawString.compareTo("3/4"))==0){
+//       config->numBeats = 3;
 
-// Characteristic that holds the scanned information from the sheet music
-// 2/2 characteristic, as some scanned information may be long if there
-// are multiple meter changes
-BLEStringCharacteristic ble_scanValues2("FFFA", BLERead | BLEWrite | BLEWriteWithoutResponse);
+//     }else if ((rawString.compareTo("4/4"))==0){
+//     config->numBeats = 4;
+//     }
+//   }
+// };
 
+// class beatAudioCharCallbacks: public BLECharacteristicCallbacks {
+//   void onWrite(BLECharacteristic *pCharacteristic) {
+//     rawString = pCharacteristic->getValue().c_str();
+//     for (int i =0; i < 4; i++){
+//       config->beatAudio[i] = rawString.charAt(i).toInt();
+//     }
+//   }
+// };
 
-/*
-  Function to setup Bluetooth service and characteristics.
-  Must be called within the setup() function for the board.
+// class showSubsCharCallbacks: public BLECharacteristicCallbacks {
+//   void onWrite(BLECharacteristic *pCharacteristic) {
+//     rawString = pCharacteristic->getValue().c_str();
+//     for (int i =3; i > -1; i--){
+//       indexTrue = rawString.lastIndexOf('true');
+//       indexFalse = rawString.lastIndexOf('false');
+//       if (indexTrue > indexFalse){
+//         config->showSubs[i]=true;
+//         rawString.remove(indexTrue);
+//       }else{
+//         config->showSubs[i] = false;
+//         rawString.remove(indexFalse);
+//       }
+//     }
+//   }
+// };
 
-*/
-void setupBLE(){
-  if (!BLE.begin()) {
-    Serial.println("starting Bluetooth® Low Energy module failed!");
-    while (1);
-  }
+// class numSubsCharCallbacks: public BLECharacteristicCallbacks {
+//   void onWrite(BLECharacteristic *pCharacteristic) {
+//   rawString = pCharacteristic->getValue().c_str();
+//     for (int i = 0; i < 4; i++){
+//       config->subdivisions[i] = rawString.charAt((3*i)+1).toInt();
 
-  // disconnect any previously connected BLE remote device
-  if (BLE.connected()){
-    BLE.disconnect();
-  }
+//     }
+//   }
+// };
 
-  // set the local name peripheral advertises
-  BLE.setLocalName("Metronome_Glasses");
+// class subAudio1CharCallbacks: public BLECharacteristicCallbacks {
+//   void onWrite(BLECharacteristic *pCharacteristic) {
+//   rawString = pCharacteristic->getValue().c_str();
+//   int index = 0;
+//     for (int i =0; i < 2; i++){
+//       for (int j = 0; j <4; j++){
+//         config->subAudio[i][j] = rawString.charAt(index).toInt();
+//       }
+//     }
+//   }
+// };
 
-  // set the device name in the built in device name characteristic
-  BLE.setDeviceName("Metronome_Glasses");
+// class subAudio2CharCallbacks: public BLECharacteristicCallbacks {
+//   void onWrite(BLECharacteristic *pCharacteristic) {
+//   rawString = pCharacteristic->getValue().c_str();
+//   int index = 0;
+//     for (int i =2; i < 4; i++){
+//       for (int j = 0; j < 4; j++){
+//         config->subAudio[i][j] = rawString.charAt(index).toInt();
+//       }
+//     }
+//   }
+// };
+
+// class isPlayingCharCallbacks: public BLECharacteristicCallbacks {
+//   void onWrite(BLECharacteristic *pCharacteristic) {
+//     config->isRunning = toBool(pCharacteristic->getValue().c_str());
+//   }
+// };
+
+// class fromScanCharCallbacks: public BLECharacteristicCallbacks {
+//   void onWrite(BLECharacteristic *pCharacteristic) {
+
+//   }
+// };
+
+// class scanValues1CharCallbacks: public BLECharacteristicCallbacks {
+//   void onWrite(BLECharacteristic *pCharacteristic) {
+
+//   }
+// };
+
+// class scanValues1CharCallbacks: public BLECharacteristicCallbacks {
+//   void onWrite(BLECharacteristic *pCharacteristic) {
+
+//   }
+// };
+
+// /*
+//   Function to setup Bluetooth service and characteristics.
+//   Must be called within the setup() function for the board.
+
+// */
+// void setupBLE(){
+//   BLEDevice::init("Metronome_Glasses");
+//   pSecurity->setCapability(ESP_IO_CAP_NONE);  
+//   pSecurity->setAuthenticationMode(ESP_LE_AUTH_NO_BOND);
+//   server = BLEDevice::createServer();
+//   server->setCallbacks(new ServerCallbacks());
+
+//   BLEService *service = server->createService(SERVICE_UUID);
+//   ble_bpm = service->createCharacteristic(
+//       "FFF0",
+//       BLECharacteristic::PROPERTY_READ | 
+//       BLECharacteristic::PROPERTY_WRITE );
+//   ble_meter = service->createCharacteristic(
+//       "FFF1",
+//       BLECharacteristic::PROPERTY_READ | 
+//       BLECharacteristic::PROPERTY_WRITE 
+//     );                
+//   ble_beatAudio = service->createCharacteristic(
+//       "FFF2",
+//       BLECharacteristic::PROPERTY_READ | 
+//       BLECharacteristic::PROPERTY_WRITE 
+//     );
+//   ble_showSubs = service->createCharacteristic(
+//       "FFF3",
+//       BLECharacteristic::PROPERTY_READ | 
+//       BLECharacteristic::PROPERTY_WRITE 
+//     );
+//   ble_numSubs = service->createCharacteristic(
+//       "FFF4",
+//       BLECharacteristic::PROPERTY_READ | 
+//       BLECharacteristic::PROPERTY_WRITE 
+//     );
+//   ble_subAudio1 = service->createCharacteristic(
+//       "FFF5",
+//       BLECharacteristic::PROPERTY_READ | 
+//       BLECharacteristic::PROPERTY_WRITE 
+//     );
+//   ble_subAudio2 = service->createCharacteristic(
+//       "FFF6",
+//       BLECharacteristic::PROPERTY_READ | 
+//       BLECharacteristic::PROPERTY_WRITE 
+//     );
+//   ble_isPlaying = service->createCharacteristic(
+//       "FFF7",
+//       BLECharacteristic::PROPERTY_READ | 
+//       BLECharacteristic::PROPERTY_WRITE 
+//     );
+//   ble_fromScan = service->createCharacteristic(
+//       "FFF8",
+//       BLECharacteristic::PROPERTY_READ | 
+//       BLECharacteristic::PROPERTY_WRITE
+//     );
+//   ble_scanValues1 = service->createCharacteristic(
+//       "FFF9",
+//       BLECharacteristic::PROPERTY_READ | 
+//       BLECharacteristic::PROPERTY_WRITE
+//     );
+//   ble_scanValues2 = service->createCharacteristic(
+//       "FFFA",
+//       BLECharacteristic::PROPERTY_READ | 
+//       BLECharacteristic::PROPERTY_WRITE
+//     );
+
   
-  // add the characteristics to the service
-  metronome_glasses.addCharacteristic(ble_bpm);
-  metronome_glasses.addCharacteristic(ble_meter);
-  metronome_glasses.addCharacteristic(ble_beatAudio);
-  metronome_glasses.addCharacteristic(ble_showSubs);
-  metronome_glasses.addCharacteristic(ble_numSubs);
-  metronome_glasses.addCharacteristic(ble_subAudio1);
-  metronome_glasses.addCharacteristic(ble_subAudio2);
-  metronome_glasses.addCharacteristic(ble_isPlaying);
-  metronome_glasses.addCharacteristic(ble_fromScan);
-  metronome_glasses.addCharacteristic(ble_scanValues1);
-  metronome_glasses.addCharacteristic(ble_scanValues2);
- 
+//   ble_bpm->addDescriptor(new BLE2902());
+//   ble_meter->addDescriptor(new BLE2902());
+//   ble_beatAudio->addDescriptor(new BLE2902());
+//   ble_showSubs->addDescriptor(new BLE2902());
+//   ble_numSubs->addDescriptor(new BLE2902());
+//   ble_subAudio1->addDescriptor(new BLE2902());
+//   ble_subAudio2->addDescriptor(new BLE2902());
+//   ble_isPlaying->addDescriptor(new BLE2902());
+//   ble_fromScan->addDescriptor(new BLE2902());
+//   ble_scanValues1->addDescriptor(new BLE2902());
+//   ble_scanValues2->addDescriptor(new BLE2902());
 
-  // add the service to the Bluetooth Device (ESP32)
-  BLE.addService(metronome_glasses);
+//   ble_bpm->setCallbacks(new bpmCharCallbacks());
+//   ble_meter->setCallbacks(new meterCharCallbacks());
+//   ble_beatAudio->setCallbacks(new beatAudioCharCallbacks());
+//   ble_showSubs->setCallbacks(new showSubsCharCallbacks());
+//   ble_numSubs->setCallbacks(new numSubsCharCallbacks());
+//   ble_subAudio1->setCallbacks(new subAudio1CharCallbacks());
+//   ble_subAudio2->setCallbacks(new subAudio2CharCallbacks());
+//   ble_isPlaying->setCallbacks(new isPlayingCharCallbacks());
+//   ble_fromScan->setCallbacks(new fromScanCharCallbacks());
+//   ble_scanValues1->setCallbacks(new scanValues1CharCallbacks());
+//   ble_scanValues2->setCallbacks(new scanValues2CharCallbacks());
 
-  //Code from EnhancedAdvertising.ino..
-   // Build scan response data packet
-  BLEAdvertisingData scanData;
-  // Set parameters for scan response packet
-  scanData.setLocalName("Scan Response Data");
-  // Copy set parameters in the actual scan response packet
-  BLE.setScanResponseData(scanData);
+//   service->start();
+  
+//   BLEAdvertising *bAdvertising = BLEDevice::getAdvertising();
+//   bAdvertising->addServiceUUID(SERVICE_UUID);
 
-  // Build advertising data packet
-  BLEAdvertisingData advData;
+//   bAdvertising->setScanResponse(true);
+//   bAdvertising->setMinPreferred(0x06);  // functions that help with iPhone connections issue
+//   bAdvertising->setMaxPreferred(0x12);  // iPhone connection issue resolution
 
-  // Set parameters for advertising packet
-  advData.setManufacturerData(0x0001, manufactData, sizeof(manufactData));
-  advData.setAdvertisedService(metronome_glasses);
-  advData.setAdvertisedServiceData(0xfff0, serviceData, sizeof(serviceData));
+//   BLEDevice::startAdvertising();
+// }
 
-  // Copy set parameters in the actual advertising packet
-  BLE.setAdvertisingData(advData);
-
-  //.. end code
-
-  // start advertising
-  BLE.setAdvertisedServiceUuid("FFFF");
-  BLE.setConnectable;
-  BLE.setPairable;
-  BLE.advertise();
-  Serial.println("Bluetooth® device active, waiting for connections...");
-
- if (BLE.connected()){
-  // listen for Bluetooth® Low Energy peripherals to connect:
-  BLEDevice central = BLE.central();
-
-  // if a central is connected to peripheral:
-  if (central) {
-    Serial.print("Connected to central: ");
-    // print the central's MAC address:
-    Serial.println(central.address());
-  }
-    BLE.stopAdvertise();
-  }
-}
-
-
-/*
-  function to poll for Bluetooth events/notifications from the remote device.
-  must be called during the main loop() of the board program.
-
-*/
-void checkForBluetoothEvents(){
-  // poll for BLE events
-  BLE.poll();
-}
 
 

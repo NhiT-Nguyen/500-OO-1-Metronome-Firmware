@@ -1,3 +1,8 @@
+
+
+// #include <ESP_8_BIT_GFX.h>
+// #include <ESP_8_BIT_composite.h>
+
 /*
  * Tempo Titans - Beat Box Display
  * 
@@ -11,18 +16,9 @@
  * 
  * Libraries:
  *   - ESP_8_BIT_GFX: Generates composite video signal using ESP32's DAC
+ *   - Native ESP32 BLE libraries from Espressif: 
  * 
- * JSON Format:
- * {
- *   "command": "start" or "stop",
- *   "bpm": 60,
- *   "numBeats": 4,
- *   "beats": [
- *    {"subdivisions": 0},
- *    {"subdivisions": 2},
- *    {"subdivisions": 3},
- *    {"subdivisions": 4}
- * } 
+
  * 
  * Note: AI (Claude) was used to assist with debugging
  */
@@ -34,7 +30,7 @@
  * First parameter:  true = NTSC (North America, 30fps), false = PAL (Europe, 25fps) - Analog TV standards
  * Second parameter: 8 = 8-bit colour mode (RGB332 format, 256 colours)
  */
-ESP_8_BIT_GFX videoOut(true, 8);
+// ESP_8_BIT_GFX lcd(true, 8);
 
 /*
  * BPM and timing variables
@@ -42,65 +38,89 @@ ESP_8_BIT_GFX videoOut(true, 8);
  * beatCount:    Total number of beats since program started (used to determine current beat 1-4)
  * lastBeatTime: Timestamp (in milliseconds) of when the last beat occurred
  */
+
+#include <BLEDevice.h>
+#include <BLESecurity.h>
+#include <BLEServer.h>
+#include <BLEUtils.h>
+#include <BLE2902.h>
+
+#define LGFX_AUTODETECT // 自動認識 (D-duino-32 XS, WT32-SC01, PyBadge はパネルID読取りが出来ないため自動認識の対象から外れています)
+
+// 複数機種の定義を行うか、LGFX_AUTODETECTを定義することで、実行時にボードを自動認識します。
+
+// ヘッダをincludeします。
+#include <LovyanGFX.hpp>
+
+#include <LGFX_AUTODETECT.hpp>  // クラス"LGFX"を準備します
+// #include <lgfx_user/LGFX_ESP32_sample.hpp> // またはユーザ自身が用意したLGFXクラスを準備します
+
+static LGFX lcd;  
+
+BLEServer *server = NULL;
+BLECharacteristic *ble_bpm = NULL;
+BLECharacteristic *ble_meter = NULL;
+BLECharacteristic *ble_beatAudio = NULL;
+BLECharacteristic *ble_showSubs = NULL;
+BLECharacteristic *ble_numSubs = NULL;
+BLECharacteristic *ble_subAudio1 = NULL;
+BLECharacteristic *ble_subAudio2 = NULL;
+BLECharacteristic *ble_isPlaying = NULL;
+BLECharacteristic *ble_fromScan = NULL;
+BLECharacteristic *ble_scanValues1 = NULL;
+BLECharacteristic *ble_scanValues2 = NULL;
+
+BLESecurity *pSecurity = new BLESecurity();
+
+bool deviceConnected = false;
+uint32_t value = 0;
+
+#define SERVICE_UUID        "FFFF"
+
+class ServerCallbacks: public BLEServerCallbacks {
+    void onConnect(BLEServer* pServer) {
+      deviceConnected = true;
+    };
+    void onDisconnect(BLEServer* pServer) {
+      deviceConnected = false;
+    }
+};
+
+bool toBool(String src){
+  if (*src.equals("true")){
+    return true;
+  else
+    return false;
+  }
+} 
 int bpm = 50;
 int beatCount = 0;
 unsigned long lastBeatTime = 0;
 
 // Beats configuration
 struct BeatConfig {
-  int numBeats;                  
-  int subdivisions[4];           
+  int numBeats;
+  int beatAudio[4];
+  int showSubs[4];                
+  int subdivisions[4];
+  int subAudio[4][4];           
   bool isRunning;                
 };
 
 // Initialize with default values
 BeatConfig config = {
-  4,              
-  {0, 0, 0, 0},   
+  4,
+  {0, 0, 0, 0},  
+  {0, 0, 0, 0},              
+  {0, 0, 0, 0},
+  {
+    {0, 0, 0, 0},
+    {0, 0, 0, 0},
+    {0, 0, 0, 0},
+    {0, 0, 0, 0},
+  },   
   false            
 };
-
-
-// Parse JSON string
-// Code inspired from: https://arduinojson.org/v7/assistant/#/step1
-bool parseJson(const char* input) {
-  JsonDocument doc;
-  DeserializationError error = deserializeJson(doc, input);
-
-  if (error) {
-    Serial.print("deserializeJson() failed: ");
-    Serial.println(error.c_str());
-    return false;
-  }
-
-  const char* command = doc["command"]; 
-  if (command == nullptr) {
-    Serial.println("No command found in JSON");
-    return false;
-  }
-
-  if (strcmp(command, "start") == 0) {
-    config.isRunning = true;
-    beatCount = 0;          
-    lastBeatTime = millis();
-  } else if (strcmp(command, "stop") == 0) {
-    config.isRunning = false;
-    beatCount = 0;
-    lastBeatTime = 0;
-    return true;
-  }
-
-  bpm = doc["bpm"];
-  config.numBeats = doc["numBeats"]; 
-
-  int beatIndex = 0;
-  for (JsonObject beat : doc["beats"].as<JsonArray>()) {
-    config.subdivisions[beatIndex] = beat["subdivisions"];
-    beatIndex++;
-  }
-
-  return true;
-}
 
 /*
  * Colour definitions (RGB332 format)
@@ -112,9 +132,230 @@ bool parseJson(const char* input) {
  */
 uint8_t bgColor = 0x02;        // Dark blue background
 uint8_t boxColor = 0x03;       // Blue boxes (inactive boxes)
-uint8_t activeColor = 0xFC;    // Yellow (active)
+uint8_t activeColor = 0x1F;    // Aqua boxes (active)
+
 uint8_t textColor = 0xFF;      // White text
 uint8_t bpmColor = 0xFF;       // White for "Current BPM"
+
+uint8_t redColor = 0xE1;        // red/pink for audio if selected
+uint8_t greenColor = 0x5C;      // green for audio track if selected
+uint8_t yellowColor = 0xFC;    // Yellow 
+
+/*
+* SECTION: Characteristic Callbacks
+*
+* onWrite (BLECharacteristic): update associated metronome logic variable
+* with new value from BLECharacteristic that was just written by central
+*/
+class bpmCharCallbacks: public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic *pCharacteristic) {
+    bpm = pCharacteristic->getValue().toString()().toInt(); // Get the new data
+  }
+};
+
+class meterCharCallbacks: public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic *pCharacteristic) {
+    String rawString = pCharacteristic->getValue().toString()();
+    if ((rawString.compareTo("2/4"))==0){
+      &config->numBeats = 2;
+
+    }else if ((rawString.compareTo("3/4"))==0){
+      &config->numBeats = 3;
+
+    }else if ((rawString.compareTo("4/4"))==0){
+    &config->numBeats = 4;
+    }
+  }
+};
+
+class beatAudioCharCallbacks: public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic *pCharacteristic) {
+    rawString = pCharacteristic->getValue().toString()();
+    for (int i =0; i < 4; i++){
+      &config->beatAudio[i] = rawString.charAt(i).toInt();
+    }
+  }
+};
+
+class showSubsCharCallbacks: public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic *pCharacteristic) {
+    rawString = pCharacteristic->getValue().toString()();
+    for (int i =3; i > -1; i--){
+      indexTrue = rawString.lastIndexOf('true');
+      indexFalse = rawString.lastIndexOf('false');
+      if (indexTrue > indexFalse){
+        &config->showSubs[i]=true;
+        rawString.remove(indexTrue);
+      }else{
+        &config->showSubs[i] = false;
+        rawString.remove(indexFalse);
+      }
+    }
+  }
+};
+
+class numSubsCharCallbacks: public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic *pCharacteristic) {
+  rawString = pCharacteristic->getValue().toString()();
+    for (int i = 0; i < 4; i++){
+      &config->subdivisions[i] = rawString.charAt((3*i)+1).toInt();
+
+    }
+  }
+};
+
+class subAudio1CharCallbacks: public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic *pCharacteristic) {
+  rawString = pCharacteristic->getValue().toString()();
+  int index = 0;
+    for (int i =0; i < 2; i++){
+      for (int j = 0; j <4; j++){
+        &config->subAudio[i][j] = rawString.charAt(index).toInt();
+      }
+    }
+  }
+};
+
+class subAudio2CharCallbacks: public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic *pCharacteristic) {
+  rawString = pCharacteristic->getValue().toString();
+  int index = 0;
+    for (int i =2; i < 4; i++){
+      for (int j = 0; j < 4; j++){
+        &config->subAudio[i][j] = rawString.charAt(index).toInt();
+      }
+    }
+  }
+};
+
+class isPlayingCharCallbacks: public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic *pCharacteristic) {
+    &config->isRunning = toBool(pCharacteristic->getValue().toString());
+  }
+};
+
+class fromScanCharCallbacks: public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic *pCharacteristic) {
+
+  }
+};
+
+class scanValues1CharCallbacks: public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic *pCharacteristic) {
+
+  }
+};
+
+class scanValues1CharCallbacks: public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic *pCharacteristic) {
+
+  }
+};
+
+/*
+  Function to setup Bluetooth service and characteristics.
+  Must be called within the setup() function for the board.
+
+*/
+void setupBLE(){
+  BLEDevice::init("Metronome_Glasses");
+  pSecurity->setCapability(ESP_IO_CAP_NONE);  
+  pSecurity->setAuthenticationMode(ESP_LE_AUTH_NO_BOND);
+  server = BLEDevice::createServer();
+  server->setCallbacks(new ServerCallbacks());
+
+  BLEService *service = server->createService(SERVICE_UUID);
+  ble_bpm = service->createCharacteristic(
+      "FFF0",
+      BLECharacteristic::PROPERTY_READ | 
+      BLECharacteristic::PROPERTY_WRITE );
+  ble_meter = service->createCharacteristic(
+      "FFF1",
+      BLECharacteristic::PROPERTY_READ | 
+      BLECharacteristic::PROPERTY_WRITE 
+    );                
+  ble_beatAudio = service->createCharacteristic(
+      "FFF2",
+      BLECharacteristic::PROPERTY_READ | 
+      BLECharacteristic::PROPERTY_WRITE 
+    );
+  ble_showSubs = service->createCharacteristic(
+      "FFF3",
+      BLECharacteristic::PROPERTY_READ | 
+      BLECharacteristic::PROPERTY_WRITE 
+    );
+  ble_numSubs = service->createCharacteristic(
+      "FFF4",
+      BLECharacteristic::PROPERTY_READ | 
+      BLECharacteristic::PROPERTY_WRITE 
+    );
+  ble_subAudio1 = service->createCharacteristic(
+      "FFF5",
+      BLECharacteristic::PROPERTY_READ | 
+      BLECharacteristic::PROPERTY_WRITE 
+    );
+  ble_subAudio2 = service->createCharacteristic(
+      "FFF6",
+      BLECharacteristic::PROPERTY_READ | 
+      BLECharacteristic::PROPERTY_WRITE 
+    );
+  ble_isPlaying = service->createCharacteristic(
+      "FFF7",
+      BLECharacteristic::PROPERTY_READ | 
+      BLECharacteristic::PROPERTY_WRITE 
+    );
+  ble_fromScan = service->createCharacteristic(
+      "FFF8",
+      BLECharacteristic::PROPERTY_READ | 
+      BLECharacteristic::PROPERTY_WRITE
+    );
+  ble_scanValues1 = service->createCharacteristic(
+      "FFF9",
+      BLECharacteristic::PROPERTY_READ | 
+      BLECharacteristic::PROPERTY_WRITE
+    );
+  ble_scanValues2 = service->createCharacteristic(
+      "FFFA",
+      BLECharacteristic::PROPERTY_READ | 
+      BLECharacteristic::PROPERTY_WRITE
+    );
+
+  
+  ble_bpm->addDescriptor(new BLE2902());
+  ble_meter->addDescriptor(new BLE2902());
+  ble_beatAudio->addDescriptor(new BLE2902());
+  ble_showSubs->addDescriptor(new BLE2902());
+  ble_numSubs->addDescriptor(new BLE2902());
+  ble_subAudio1->addDescriptor(new BLE2902());
+  ble_subAudio2->addDescriptor(new BLE2902());
+  ble_isPlaying->addDescriptor(new BLE2902());
+  ble_fromScan->addDescriptor(new BLE2902());
+  ble_scanValues1->addDescriptor(new BLE2902());
+  ble_scanValues2->addDescriptor(new BLE2902());
+
+  ble_bpm->setCallbacks(new bpmCharCallbacks());
+  ble_meter->setCallbacks(new meterCharCallbacks());
+  ble_beatAudio->setCallbacks(new beatAudioCharCallbacks());
+  ble_showSubs->setCallbacks(new showSubsCharCallbacks());
+  ble_numSubs->setCallbacks(new numSubsCharCallbacks());
+  ble_subAudio1->setCallbacks(new subAudio1CharCallbacks());
+  ble_subAudio2->setCallbacks(new subAudio2CharCallbacks());
+  ble_isPlaying->setCallbacks(new isPlayingCharCallbacks());
+  ble_fromScan->setCallbacks(new fromScanCharCallbacks());
+  ble_scanValues1->setCallbacks(new scanValues1CharCallbacks());
+  ble_scanValues2->setCallbacks(new scanValues2CharCallbacks());
+
+  service->start();
+  
+  BLEAdvertising *bAdvertising = BLEDevice::getAdvertising();
+  bAdvertising->addServiceUUID(SERVICE_UUID);
+
+  bAdvertising->setScanResponse(true);
+  bAdvertising->setMinPreferred(0x06);  // functions that help with iPhone connections issue
+  bAdvertising->setMaxPreferred(0x12);  // iPhone connection issue resolution
+
+  BLEDevice::startAdvertising();
+}
 
 /*
  * setup()
@@ -125,74 +366,14 @@ void setup() {
   // Initialize serial communication for debugging (115200 baud rate)
   Serial.begin(115200);
   Serial.println("Tempo Titans");
-  
-  
-  // Initialize composite video output
-  videoOut.begin();
-  
-  // Reduces screen flicker by copying frame buffer after swap
-  videoOut.copyAfterSwap = true;
   setupBLE();
-}
-
-// /*
-//   Event handlers: Will need to be moved to the visual_sub_test_2.ino file due to order of variable declaration
-//   (specifically, Arduino compiles sketches alphabetically)
-// */
-
-// // assign event handler for bpm characteristic
-// MGDisplayBPMCharacteristic.setEventHandler(BLEWritten, MGDisplayBPMCharacteristicWritten);
-// void MGDisplayBPMCharacteristicWritten(BLEDevice central, BLECharacteristic characteristic) {
-//   // new value written to characteristc, update the local characteristic
-//   Serial.print("Characteristic event, written: ");
-//   bpm = characteristic.value();
-// }
-
-// // assign event handler for numbers of beats characteristic
-// MGDisplayNumBeatsCharacteristic.setEventHandler(BLEWritten, MGDisplayNumBeatsCharacteristicWritten);
-// void MGDisplayNumBeatsCharacteristicWritten(BLEDevice central, BLECharacteristic characteristic) {
-//   // new value written to characteristc, update the local characteristic
-//   Serial.print("Characteristic event, written: ");
-//   config.numBeats = characteristic.value();
-// }
-
-
-// // assign event handler for subdivisions characteristic
-// MGDisplaySubdivisionsCharacteristic.setEventHandler(BLEWritten, MGDisplaySubdivisionsCharacteristicWritten);
-// void MGDisplaySubdivisionsCharacteristic(BLEDevice central, BLECharacteristic characteristic) {
-//   // new value written to characteristc, update the local characteristic
-//   Serial.print("Characteristic event, written: ");
-//   for (int i = 0;i<config.subdivision.length; i++){
-//    config.subdivision[i] = int(characteristic.value()[i]);
-//   }
-// }
-
-// Uncomment when volume buttons are set-up
-// // assign event handler for volume characteristic
-// MGDisplayVolumeCharacteristic.setEventHandler(BLEWritten, MGDisplayVolumeCharacteristicWritten);
-// void MGDisplayVolumeCharacteristicWritten(BLEDevice central, BLECharacteristic characteristic) {
-//   // new value written to characteristc, update the local characteristic
-//   Serial.print("Characteristic event, written: ");
-//   volume = characteristic.value();
-// }
-
-
-// // assign event handler for subdivision audio characteristic
-// MGDisplaySubAudioCharacteristic.setEventHandler(BLEWritten, MGDisplaySubAudioCharacteristicWritten);
-// void MGDisplaySubAudioCharacteristicWritten(BLEDevice central, BLECharacteristic characteristic) {
-//   // new value written to characteristc, update the local characteristic
-//   Serial.print("Characteristic event, written: ");
-//   subdivisionAudio = int(characteristic.value());
   
-// }
+  lcd.init();
+  lcd.setRotation(1);
+  lcd.setBrightness(255);
+  lcd.setColorDepth(24);
 
-// // assign event handler for currently playing boolean characteristic
-// MGDisplayCurrentlyPlayingCharacteristic.setEventHandler(BLEWritten, MGDisplayCurrentlyPlayingCharacteristicWritten);
-// void MGDisplayCurrentlyPlayingCharacteristicWritten(BLEDevice central, BLECharacteristic characteristic) {
-//   // new value written to characteristc, update the local characteristic
-//   Serial.print("Characteristic event, written: ");
-//   config.isRunning = characteristic.value();
-// }
+}
 
 
 /*
@@ -206,14 +387,11 @@ void loop() {
     return; 
   }
 
-  // check for Bluetooth events
-  checkForBluetoothEvents();
-
-  // Wait for the next video frame (synchronizes drawing with display refresh)
-  videoOut.waitForFrame();
+  // // Wait for the next video frame (synchronizes drawing with display refresh)
+  // lcd.waitForFrame();
   
   // Clear the screen by filling with background colour
-  videoOut.fillScreen(bgColor);
+  lcd.fillScreen(bgColor);
   
   /*
    * Calculate current beat (0-3)
@@ -278,19 +456,19 @@ void loop() {
     
     if (i == currentBeat && config.isRunning) {
       // Active beat - draw yellow filled rectangle
-      videoOut.fillRect(x, boxY, boxWidth, boxHeight, activeColor);
-      videoOut.setTextColor(0x00);  // Black text for contrast on yellow
+      lcd.fillRect(x, boxY, boxWidth, boxHeight, activeColor);
+      lcd.setTextColor(0x00);  // Black text for contrast on yellow
     } else {
       // Inactive beat - draw blue filled rectangle
-      videoOut.fillRect(x, boxY, boxWidth, boxHeight, boxColor);
-      videoOut.setTextColor(0xFF);  // White text for contrast on blue
+      lcd.fillRect(x, boxY, boxWidth, boxHeight, boxColor);
+      lcd.setTextColor(0xFF);  // White text for contrast on blue
     }
     
     // Draw beat number (1, 2, 3, or 4) inside the box
-    videoOut.setTextSize(2);
+    lcd.setTextSize(2);
     // Position text roughly centred in the box
-    videoOut.setCursor(x + 18, boxY + 22);
-    videoOut.print(i + 1);  // i+1 converts 0-3 to 1-4
+    lcd.setCursor(x + 18, boxY + 22);
+    lcd.print(i + 1);  // i+1 converts 0-3 to 1-4
 
     // Draw subdiviosion boxes
     int beatSubdivisions = config.subdivisions[i];
@@ -301,9 +479,9 @@ void loop() {
         int subX = subStartX + (j * (subBoxWidth + subBoxSpacing));
   
         if( i == currentBeat && j == currentSub && config.isRunning){ 
-          videoOut.fillRect(subX, subBoxY, subBoxWidth, subBoxHeight, activeColor);
+          lcd.fillRect(subX, subBoxY, subBoxWidth, subBoxHeight, activeColor);
         } else {
-          videoOut.fillRect(subX, subBoxY, subBoxWidth, subBoxHeight, boxColor);
+          lcd.fillRect(subX, subBoxY, subBoxWidth, subBoxHeight, boxColor);
         }
       }
     }
@@ -312,26 +490,26 @@ void loop() {
   /*
    * Draw "Current BPM:" label
    */
-  videoOut.setTextColor(bpmColor);
-  videoOut.setTextSize(2);
-  videoOut.setCursor(50, 110);
-  videoOut.print("Current BPM:");
+  lcd.setTextColor(bpmColor);
+  lcd.setTextSize(2);
+  lcd.setCursor(50, 110);
+  lcd.print("Current BPM:");
   
   /*
    * Draw BPM number
    * Adjusts x position based on number of digits to keep it centred
    */
-  videoOut.setTextColor(textColor);
-  videoOut.setTextSize(4);  // Larger text for BPM value
+  lcd.setTextColor(textColor);
+  lcd.setTextSize(4);  // Larger text for BPM value
   
   if (bpm < 100) {
     // Two digits - position further right
-    videoOut.setCursor(95, 145);
+    lcd.setCursor(95, 145);
   } else {
     // Three digits - position further left
-    videoOut.setCursor(75, 145);
+    lcd.setCursor(75, 145);
   }
-  videoOut.print(bpm);
+  lcd.print(bpm);
   
   /*
    * Check if it is time for the next beat
