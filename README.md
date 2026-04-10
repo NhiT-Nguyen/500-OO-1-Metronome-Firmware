@@ -1,7 +1,7 @@
 # Metronome Glasses Firmware
 
 The firmware of Metrnome Glasses was developed with Arduino and the Espressif ESP32 Library.
-Other libraries were used to implement video on the glasses, and and I2S Protocol for the associated audio.
+Other libraries were used to implement video on the glasses, and an I2S Protocol was used for the associated audio.
 
 # Mechanical Enclosure
 
