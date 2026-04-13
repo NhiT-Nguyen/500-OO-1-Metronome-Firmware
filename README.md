@@ -9,6 +9,10 @@ Included in this repository are the .stl files needed to 3D print the mechanical
 The design of these parts were largely adapted from the ![Mentra Open Source Smart Glasses](https://github.com/Mentra-Community/OpenSourceSmartGlasses/tree/main/mechanical),
 with adaptations made by the Tempo Titans team to suit our use case.
 
+# Altium Design Files - PCB
+This repository contains the PCB design files for the Tempo Titans custom board, designed in Altium Designer and fabricated by JLCPCB.
+
+
 # Sister Repository
 
 This repository is the sister repository of the ![Flutter app](github.com/NhiT-Nguyen/500-OO-1-Metronome-App) used to configure the glasses' metronome settings.
